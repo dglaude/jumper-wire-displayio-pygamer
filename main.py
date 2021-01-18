@@ -2,7 +2,8 @@ import analogio
 import displayio
 import digitalio
 import board
-import gamepadshift
+import bluepad32
+import busio
 import time
 import supervisor
 
@@ -30,38 +31,35 @@ def tick(fps):
         last_tick = time.monotonic()
 
 
-class PyGamerButtons:
-    K_X = 0x01
-    K_O = 0x02
-    K_START = 0x04
-    K_SELECT = 0x08
-    K_DOWN = 0x10
-    K_LEFT = 0x20
-    K_RIGHT = 0x40
-    K_UP = 0x80
+class PyPortalButtons:
+    K_UP = 0x01
+    K_DOWN = 0x02
+    K_RIGHT = 0x04
+    K_LEFT = 0x08
+    K_X = 0x10        # "1"
+    K_O = 0x20        # "2"
+    K_START = 0x40    # "A"
+    K_SELECT = 0x80   # "B"
 
     def __init__(self):
-        self.buttons = gamepadshift.GamePadShift(
-            digitalio.DigitalInOut(board.BUTTON_CLOCK),
-            digitalio.DigitalInOut(board.BUTTON_OUT),
-            digitalio.DigitalInOut(board.BUTTON_LATCH),
-        )
-        self.joy_x = analogio.AnalogIn(board.JOYSTICK_X)
-        self.joy_y = analogio.AnalogIn(board.JOYSTICK_Y)
+        # If you are using a board with pre-defined ESP32 Pins:
+        esp32_cs = digitalio.DigitalInOut(board.ESP_CS)
+        esp32_ready = digitalio.DigitalInOut(board.ESP_BUSY)
+        esp32_reset = digitalio.DigitalInOut(board.ESP_RESET)
+        spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
+        self.esp = bluepad32.ESP_SPIcontrol(spi, esp32_cs, esp32_ready, esp32_reset, debug=0)
+# Optionally, to enable UART logging in the ESP32
+#        esp.set_esp_debug(1)
+# Delete Bluetooth stored keys. Might make connection easier (or more difficult).
+        self.esp.bluetooth_del_keys()
+# Should display "Bluepad32 for Airlift"
+        print('Firmware vers:', self.esp.firmware_version)
 
     def get_pressed(self):
-        pressed = self.buttons.get_pressed()
-        dead = 15000
-        x = self.joy_x.value - 32767
-        if x < -dead:
-            pressed |= self.K_LEFT
-        elif x > dead:
-            pressed |= self.K_RIGHT
-        y = self.joy_y.value - 32767
-        if y < -dead:
-            pressed |= self.K_UP
-        elif y > dead:
-            pressed |= self.K_DOWN
+        pressed = 0x0
+        gamepads = self.esp.get_gamepads_data()
+        for gp in gamepads:
+            pressed = gp['buttons']<<4 | gp['dpad']
         return pressed
 
 
@@ -261,8 +259,8 @@ class Sparky(Sprite):
 
 
 display = board.DISPLAY
-root = displayio.Group(max_size=8)
-buttons = PyGamerButtons()
+root = displayio.Group(max_size=8, scale=2)
+buttons = PyPortalButtons()
 level = Level(root)
 sprites = [
     Sparky(root, level, 104, 96),
